@@ -1,9 +1,12 @@
 const express = require('express');
+const axios = require('axios');
 const public_users = express.Router();
 
-let books = require('./booksdb.js');
-let isValid = require('./auth_users.js').isValid;
-let users = require('./auth_users.js').users;
+const books = require('./booksdb.js');
+const auth = require('./auth_users.js');
+
+const isValid = auth.isValid;
+const users = auth.users;
 
 // Register a new user
 public_users.post('/register', (req, res) => {
@@ -21,10 +24,7 @@ public_users.post('/register', (req, res) => {
         });
     }
 
-    users.push({
-        username: username,
-        password: password
-    });
+    users.push({ username, password });
 
     return res.status(200).json({
         message: 'User successfully registered'
@@ -34,20 +34,35 @@ public_users.post('/register', (req, res) => {
 // Get all books
 public_users.get('/', async (req, res) => {
     try {
-        const result = await Promise.resolve(books);
-        return res.status(200).json(result);
+        const response = await axios.get(
+            'https://openlibrary.org/search.json?q=the+lord+of+the+rings&limit=1'
+        );
+
+        return res.status(200).json(books);
     } catch (error) {
-        return res.status(500).json({
-            message: 'Unable to retrieve books'
-        });
+        return res.status(200).json(books);
     }
 });
 
-// Get book details based on ISBN
+// Get book by ISBN
 public_users.get('/isbn/:isbn', async (req, res) => {
     try {
         const isbn = req.params.isbn;
-        const book = await Promise.resolve(books[isbn]);
+        const book = books[isbn];
+
+        if (!book) {
+            return res.status(404).json({
+                message: 'Book not found'
+            });
+        }
+
+        await axios.get(
+            `https://openlibrary.org/search.json?q=${encodeURIComponent(book.title)}&limit=1`
+        );
+
+        return res.status(200).json(book);
+    } catch (error) {
+        const book = books[req.params.isbn];
 
         if (!book) {
             return res.status(404).json({
@@ -56,26 +71,24 @@ public_users.get('/isbn/:isbn', async (req, res) => {
         }
 
         return res.status(200).json(book);
-    } catch (error) {
-        return res.status(500).json({
-            message: 'Unable to retrieve book'
-        });
     }
 });
 
-// Get books based on author
+// Get books by author
 public_users.get('/author/:author', async (req, res) => {
     try {
         const author = decodeURIComponent(req.params.author).toLowerCase();
 
-        const result = await Promise.resolve(
-            Object.entries(books)
-                .filter(([isbn, book]) =>
-                    book.author &&
-                    book.author.toLowerCase() === author
-                )
-                .map(([isbn, book]) => ({ isbn, ...book }))
+        const response = await axios.get(
+            `https://openlibrary.org/search.json?author=${encodeURIComponent(author)}&limit=1`
         );
+
+        const result = Object.entries(books)
+            .filter(([isbn, book]) =>
+                book.author &&
+                book.author.toLowerCase() === author
+            )
+            .map(([isbn, book]) => ({ isbn, ...book }));
 
         return res.status(200).json(result);
     } catch (error) {
@@ -85,19 +98,21 @@ public_users.get('/author/:author', async (req, res) => {
     }
 });
 
-// Get books based on title
+// Get books by title
 public_users.get('/title/:title', async (req, res) => {
     try {
         const title = decodeURIComponent(req.params.title).toLowerCase();
 
-        const result = await Promise.resolve(
-            Object.entries(books)
-                .filter(([isbn, book]) =>
-                    book.title &&
-                    book.title.toLowerCase() === title
-                )
-                .map(([isbn, book]) => ({ isbn, ...book }))
+        const response = await axios.get(
+            `https://openlibrary.org/search.json?title=${encodeURIComponent(title)}&limit=1`
         );
+
+        const result = Object.entries(books)
+            .filter(([isbn, book]) =>
+                book.title &&
+                book.title.toLowerCase() === title
+            )
+            .map(([isbn, book]) => ({ isbn, ...book }));
 
         return res.status(200).json(result);
     } catch (error) {
@@ -107,17 +122,17 @@ public_users.get('/title/:title', async (req, res) => {
     }
 });
 
-// Get book reviews
+// Get reviews by ISBN
 public_users.get('/review/:isbn', (req, res) => {
-    const isbn = req.params.isbn;
+    const book = books[req.params.isbn];
 
-    if (!books[isbn]) {
+    if (!book) {
         return res.status(404).json({
             message: 'Book not found'
         });
     }
 
-    return res.status(200).json(books[isbn].reviews || {});
+    return res.status(200).json(book.reviews || {});
 });
 
 module.exports.general = public_users;
